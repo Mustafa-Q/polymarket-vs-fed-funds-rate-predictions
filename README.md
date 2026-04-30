@@ -1,47 +1,83 @@
-# polymarket-vs-fed-funds-rate-predictions
+# Fed Funds Rate Forecasts: FedWatch vs. Polymarket
 
-Polymarket vs Fed Funds Futures as competing forecasts of FOMC rate decisions. Event-window regressions evaluate forecast errors using liquidity, volume, and time-to-meeting controls. Tests market efficiency in prediction markets.
+A statistical comparison of institutional and prediction-market probability estimates for Federal Reserve interest rate decisions across seven FOMC meetings (September 2025 – June 2026).
+
+---
 
 ## Overview
 
-This project compares prediction market probabilities from Polymarket with rate expectations implied by Fed Funds Futures. Both markets attempt to forecast the outcome of FOMC meetings. The analysis evaluates which market produces smaller forecast errors relative to the realized target rate.
+CME FedWatch and Polymarket both publish real-time probabilities for Fed rate outcomes, but they draw on very different mechanisms — one from fed funds futures pricing, the other from crowd-sourced prediction markets. This project asks: **how much do they disagree, and what predicts that disagreement?**
 
-## Data
+For each FOMC meeting and each outcome bucket (`cut_50plus`, `cut_25`, `no_change`, `hike_25plus`), I collected daily probability snapshots from both sources, aligned them to a common schema, and regressed the signed difference (`p_poly − p_fed`) on time-to-meeting and Polymarket price dynamics.
 
-The analysis combines two sources:
+---
 
-Polymarket  
-Event market probabilities for specific FOMC rate outcomes.
+## Data Sources
 
-Fed Funds Futures / CME FedWatch  
-Probability distributions implied by futures pricing.
+- **CME FedWatch** — per-meeting probability CSVs downloaded from [CME Group](https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html)
+- **Polymarket** — historical price data pulled from the Polymarket API for each FOMC meeting market
 
-The datasets are aligned by FOMC meeting date so both markets produce comparable forecasts of the same policy decision.
+Meetings covered: Sep 2025, Oct 2025, Dec 2025, Jan 2026, Mar 2026, Apr 2026, Jun 2026
 
-## Methodology
+---
 
-The project treats each market as a competing forecast of the realized FOMC target rate.
+## Repository Structure
 
-Pipeline:
+```
+├── data/
+│   └── fedwatch/               # Raw per-meeting FedWatch CSVs
+│       ├── sept2025-probabilities.csv
+│       ├── oct2025-probabilities.csv
+│       └── ...
+│
+├── fedwatch-append.R           # Combines raw FedWatch CSVs into one wide file
+├── fedwatch-clean.R            # Pivots to long format, normalizes probabilities
+├── fedwatch-transform.R        # Maps rate bins to Polymarket outcome buckets
+│
+├── polymarket-build.R          # Parses Polymarket JSON snapshots and window data
+├── merge.R                     # Joins FedWatch and Polymarket on meeting/date/outcome
+│
+├── model.R                     # Cross-sectional regression (signed & absolute error)
+├── window_regression.R         # Window-level regression with lagged price predictors
+│
+├── final_analysis_dataset.csv  # Final merged dataset used in analysis
+└── final_submission.Rmd        # Full analysis report (data cleaning, EDA, models)
+```
 
-1. Extract and clean FedWatch probability distributions  
-2. Build Polymarket probability forecasts  
-3. Convert probabilities into expected rate forecasts  
-4. Compute forecast errors relative to the realized decision  
-5. Estimate event-window regressions of forecast error on:
+---
 
-- liquidity  
-- trading volume  
-- time remaining until the meeting  
+## Pipeline
 
-These regressions test whether forecast accuracy varies with market conditions.
+The scripts run in order:
 
-## How to Run
+```
+fedwatch-append.R
+    → fedwatch-clean.R
+        → fedwatch-transform.R   ─┐
+                                   ├─→ merge.R → final_analysis_dataset.csv
+polymarket-build.R            ────┘
+                                           ↓
+                              model.R / window_regression.R
+```
 
-Run the scripts in order:
+`final_submission.Rmd` reproduces the full analysis end-to-end and is the canonical reference.
 
-1. Data extraction and cleaning  
-2. Dataset merge and construction  
-3. Regression estimation  
+---
 
-Final results are produced through `final_submission.Rmd`.
+## Methods
+
+- Outcome probabilities from FedWatch are aggregated from continuous rate-bin distributions into four buckets matching Polymarket's market structure
+- The response variable is `error = p_poly − p_fed` (signed disagreement)
+- **Cross-sectional model** (`model.R`): regresses error on days-to-meeting, Polymarket liquidity/volume/spread, and outcome type
+- **Window model** (`window_regression.R`): uses intraday Polymarket price histories to add lagged price levels and momentum predictors (`p_lag1`, `p_lag5`, `dp1`, `abs_dp1`)
+
+---
+
+## Requirements
+
+R (≥ 4.2) with the following packages:
+
+```r
+install.packages(c("tidyverse", "lubridate", "jsonlite", "purrr",
+                   "stringr", "broom", "knitr"))
+```
